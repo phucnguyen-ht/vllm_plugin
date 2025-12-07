@@ -30,7 +30,7 @@ def is_moreh_dual_moe_enabled():
 class MorehMxfp4Config(Mxfp4Config):
     @classmethod
     def get_name(cls) -> str:
-        return "moreh-mxfp4"
+        return "mxfp4"
 
     def get_quant_method(self, layer: torch.nn.Module,
                          prefix: str) -> Optional["QuantizeMethodBase"]:
@@ -196,9 +196,9 @@ class MorehMxfp4MoEMethod(Mxfp4MoEMethod):
             topk_weights, topk_ids = fused_topk(x, router_logits, top_k, False)
             group_size = 32
             
-            logger.info_once(f"[Moreh MXFP4 debug] {x.shape = }, {router_logits.shape = }, {top_k = }, {topk_ids.shape = }, {topk_weights.shape = }, {torch.topk(router_logits, 5) = }")
-            logger.info_once(f"[Moreh MXFP4 debug] {x.dtype = }, {self.w1_qweight_shuffled.dtype = }, {self.w2_qweight_shuffled = }"
-                             f"{layer.w13_weight_scale.dtype = }, {layer.w2_weight_scale.dtype = }, {layer.w13_bias.dtype = }, {layer.w2_bias.dtype = }")
+            # print(f"[Moreh MXFP4 debug] {x.shape = }, {router_logits.shape = }, {top_k = }, {topk_ids.shape = }, {topk_weights.shape = }, {torch.topk(router_logits, 5) = }")
+            # print(f"[Moreh MXFP4 debug] {x.dtype = }, {self.w1_qweight_shuffled.dtype = }, {self.w2_qweight_shuffled = }"
+            #                  f"{layer.w13_weight_scale.dtype = }, {layer.w2_weight_scale.dtype = }, {layer.w13_bias.dtype = }, {layer.w2_bias.dtype = }")
             
             kernel_kwargs = dict(
                 hidden_states=x,
@@ -379,7 +379,6 @@ class MorehMxfp4MoEMethod(Mxfp4MoEMethod):
             self.w1_qweight_shuffled = w1_qweight.view(e, 2 * n, (k // 2) // 64, K_UNROLL, 4, 4).transpose(-3, -2).reshape(e, 2 * n, (k // 2))
             # shuffle w2_qweight
             self.w2_qweight_shuffled = w2_qweight.view(e, k, (n // 2) // 64, K_UNROLL, 4, 4).transpose(-3, -2).reshape(e, k, n // 2)
-            
             del layer.w13_weight
             del layer.w2_weight
             layer.w13_weight = None

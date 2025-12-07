@@ -1,4 +1,7 @@
-**/__pycache__
+__pycache__
+
+.egg-info
 
 3rdparty/triton
 3rdparty/triton_kernels
+3rdparty/cmake-3.29.6

@@ -107,7 +107,6 @@ class MorehFusedMoEParallelConfig(FusedMoEParallelConfig):
                 ep_size=1,
                 ep_rank=0,
                 use_ep=False,
-                all2all_backend="vllm_parallel_config.all2all_backend",
             )
         # DP + EP / TP + EP / DP + TP + EP
         assert use_ep
@@ -123,7 +122,6 @@ class MorehFusedMoEParallelConfig(FusedMoEParallelConfig):
             ep_size=ep_size,
             ep_rank=ep_rank,
             use_ep=True,
-            all2all_backend="vllm_parallel_config.all2all_backend",
         )
 
 @dataclass

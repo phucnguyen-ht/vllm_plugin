@@ -5,7 +5,7 @@ git clone --recursive https://github.com/phucnguyen-ht/vllm_plugin.git
 2. On Hygon-device:
 ```
 cd docker
-docker compose -f image.yml up -d
+docker compose -f image.yml up -d test-gptoss-plugin-vllm-0.8.2
 ```
 Note that: If you run original 'mxfp4' quantization using triton_kernels, it is required to get modified triton/triton_kernels version before running docker:
 ```
@@ -30,6 +30,7 @@ Note that: To change from original mxfp4 quantization, simply replacing `--quant
 5. This main branch develops the gpt-oss plugin on original vllm image v0.8.2. To serve in the upstream vllm (v0.10.1), checkout to branch:
 ```
     git checkout dev/vllm_upstream_v0.10.1
+    docker compose -f image.yml up -d test-gptoss-plugin-vllm-0.10.1
 ```
 
 6. Execution flow to modify the logic of custom mxfp4 quantization:

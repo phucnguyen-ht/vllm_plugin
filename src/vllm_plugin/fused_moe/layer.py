@@ -223,9 +223,9 @@ class MorehFusedMoE(FusedMoE):
 
         self.top_k = top_k
 
-        self._init_aiter_shared_experts_topK_buffer(
-            vllm_config=vllm_config, dp_size=dp_size_
-        )
+        # self._init_aiter_shared_experts_topK_buffer(
+        #     vllm_config=vllm_config, dp_size=dp_size_
+        # )
 
         assert intermediate_size % self.tp_size == 0
         self.hidden_size = hidden_size

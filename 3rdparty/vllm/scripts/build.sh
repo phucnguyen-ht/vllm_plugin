@@ -5,3 +5,4 @@
 export VLLM_TARGET_DEVICE=rocm
 export ROCM_ARCH=gfx928
 pip install -e . --no-build-isolation  --index-url https://pypi.org/simple
+relo

@@ -327,6 +327,7 @@ class MorehGptOssForCausalLM(nn.Module):
         print(fmt.format( name="name", wshape="weight.shape", wdtype="w.dtype", wdev="w.dev", pshape="param.shape", pdtype="p.dtype", pdev="p.dev", ) )
         print("-" * 150)
         def _rename(_name: str): 
+            _name = maybe_rename(_name)
             if "gate_up_proj_blocks" in _name: return _name.replace("gate_up_proj_blocks", "w13_weight")
             elif "down_proj_blocks" in _name: return _name.replace("down_proj_blocks", "w2_weight") 
             elif "gate_up_proj_scales" in _name: return _name.replace("gate_up_proj_scales", "w13_weight_scale") 
@@ -342,7 +343,8 @@ class MorehGptOssForCausalLM(nn.Module):
             weight = weight.cuda()
             
             _nname = _rename(name)
-            print( fmt.format( name=_nname, wshape=str(tuple(weight.shape)), wdtype=str(weight.dtype), wdev=str(weight.device), pshape=str(tuple(param.shape)), pdtype=str(param.dtype), pdev=str(param.device), ) ) 
+            _mparam = params_dict[_nname]
+            print( fmt.format( name=_nname, wshape=str(tuple(weight.shape)), wdtype=str(weight.dtype), wdev=str(weight.device), pshape=str(tuple(_mparam.shape)), pdtype=str(_mparam.dtype), pdev=str(_mparam.device), ) ) 
 
             if "gate_up_proj_blocks" in name:
                 # Handle MLP gate and up projection weights

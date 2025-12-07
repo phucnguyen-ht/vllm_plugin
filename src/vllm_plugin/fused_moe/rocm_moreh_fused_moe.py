@@ -171,7 +171,7 @@ def rocm_gptoss_moreh_moe_1stage(
         moe_sorting_naive(topk_ids, topk_weights, E, None, LOCAL_BLOCK_SIZE_M)
         
     out_ck = torch.empty((num_token, model_dim), dtype=hidden_states.dtype, device=hidden_states.device)
-
+    # print(f"Running rocm_gptoss_moreh_moe_1stage: {num_token = }, {model_dim = }, {inter_dim = }")
     # gelu_approx = "none"
     # activation_id = ACTIVATION_NAME_TO_ID[activation]
     # gelu_mode = GELU_APPROX_NAME_TO_ID.get(gelu_approx, 0)

@@ -16,24 +16,24 @@ fi
 
 VLLM_MOREH_DIR=$WORKING_DIR
 
-# # build cmake to install fused_moe
-# if [ ! -d "$VLLM_MOREH_DIR/3rdparty/cmake-3.29.6" ]; then
-#     cd "$VLLM_MOREH_DIR/3rdparty"
-#     wget https://github.com/Kitware/CMake/releases/download/v3.29.6/cmake-3.29.6.tar.gz
-#     tar -xvf cmake-3.29.6.tar.gz
-#     cd cmake-3.29.6
+# build cmake to install fused_moe
+if [ ! -d "$VLLM_MOREH_DIR/3rdparty/cmake-3.29.6" ]; then
+    cd "$VLLM_MOREH_DIR/3rdparty"
+    wget https://github.com/Kitware/CMake/releases/download/v3.29.6/cmake-3.29.6.tar.gz
+    tar -xvf cmake-3.29.6.tar.gz
+    cd cmake-3.29.6
 
-#     ./bootstrap --prefix=/opt/cmake-3.29.6
-#     make -j$(nproc)
-#     make install
-#     ln -s /opt/cmake-3.29.6/bin/cmake /usr/bin/cmake
-# else
-#     cd "$VLLM_MOREH_DIR/3rdparty/cmake-3.29.6"
-#     make install
-#     ln -s /opt/cmake-3.29.6/bin/cmake /usr/bin/cmake
-# fi
-# reinstall vllm
+    rm -rf CMakeFiles CMakeCache.txt
+    ./bootstrap --prefix=/opt/cmake-3.29.6
+    make -j
+    make install
+    ln -s /opt/cmake-3.29.6/bin/cmake /usr/local/bin/cmake
+fi
+
+# # reinstall vllm
 pip uninstall -y vllm
+export VLLM_TARGET_DEVICE=rocm
+export ROCM_ARCH=gfx928
 cd "$VLLM_MOREH_DIR/3rdparty/vllm" && git checkout feature/custom_moe_mxfp4
 pip install -e . --no-build-isolation  --index-url https://pypi.org/simple
 
