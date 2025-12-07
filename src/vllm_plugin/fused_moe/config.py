@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from vllm_patch.model_executor.layers.fused_moe.config import FusedMoEConfig, FusedMoEParallelConfig
+from vllm.model_executor.layers.fused_moe.config import FusedMoEConfig, FusedMoEParallelConfig
 from vllm.config import ParallelConfig
 from vllm.distributed import get_dp_group, get_tensor_model_parallel_rank
 

@@ -1,16 +1,62 @@
-from vllm_patch.model_executor.layers.fused_moe.layer import *
+from vllm.model_executor.layers.fused_moe.layer import *
 from vllm.utils import round_up
 from vllm.config import VllmConfig
 
-from vllm_patch.model_executor.layers.fused_moe.rocm_aiter_fused_moe import is_rocm_aiter_fusion_shared_expert_enabled
-from vllm_patch.model_executor.layers.fused_moe.config import FusedMoEParallelConfig, FusedMoEQuantConfig
+# from vllm.model_executor.layers.fused_moe.rocm_aiter_fused_moe import is_rocm_aiter_fusion_shared_expert_enabled
+from vllm.model_executor.layers.fused_moe.config import FusedMoEParallelConfig, FusedMoEQuantConfig
 
 from vllm_plugin.fused_moe.config import MorehFusedMoEParallelConfig, MorehFusedMoEConfig
 
 # from vllm_plugin.utils import has_mori
 from vllm_plugin import envs as moreh_envs
 
-class MorehFusedMoE(CustomFusedMoE):
+def maybe_roundup_hidden_size(
+    hidden_size: int,
+    act_dtype: torch.dtype,
+    quant_config: QuantizationConfig | None,
+    moe_parallel_config: FusedMoEParallelConfig,
+) -> int:
+    """
+    Given layer hidden size and MoE configurations, round up hidden_size
+    if necessary.
+
+    Args:
+        hidden_size: Layer hidden-size
+        act_dtype: Data type of the layer activations.
+        quant_config: Fused MoE quantization configuration.
+        moe_parallel_config: Fused MoE parallelization strategy configuration.
+
+    Return:
+        Rounded up hidden_size if rounding up is required based on the configs.
+        Original hidden size otherwise.
+    """
+    if current_platform.is_rocm():
+        hidden_size = round_up(hidden_size, 256)
+    else:
+        raise RuntimeError()
+    return hidden_size
+
+def get_compressed_expert_map(expert_map: torch.Tensor) -> str:
+    """
+    Compresses the expert map by removing any -1 entries.
+
+    Args:
+        expert_map (torch.Tensor): A tensor of shape (global_num_experts,)
+            mapping from global to local index. Contains -1 for experts not
+            assigned to the current rank.
+
+    Returns:
+        str: A string mapping from local to global index.
+            Using str to support hashing for logging once only.
+    """
+    global_indices = torch.where(expert_map != -1)[0]
+    local_indices = expert_map[global_indices]
+    return ", ".join(
+        f"{local_index.item()}->{global_index.item()}"
+        for local_index, global_index in zip(local_indices, global_indices)
+    )
+    
+class MorehFusedMoE(FusedMoE):
     def __init__(
         self,
         num_experts: int,  # Global number of experts
@@ -102,20 +148,16 @@ class MorehFusedMoE(CustomFusedMoE):
         self.logical_replica_count: torch.Tensor | None = None
 
         # ROCm aiter shared experts fusion
-        self.num_fused_shared_experts = (
-            n_shared_experts
-            if n_shared_experts is not None
-            and is_rocm_aiter_fusion_shared_expert_enabled()
-            else 0
-        )
-        if (
-            not is_rocm_aiter_fusion_shared_expert_enabled()
-            and self.num_fused_shared_experts != 0
-        ):
-            raise ValueError(
-                "n_shared_experts is only supported on ROCm aiter when "
-                "VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS is enabled"
-            )
+        self.num_fused_shared_experts = 0
+        
+        # if (
+        #     not is_rocm_aiter_fusion_shared_expert_enabled()
+        #     and self.num_fused_shared_experts != 0
+        # ):
+        #     raise ValueError(
+        #         "n_shared_experts is only supported on ROCm aiter when "
+        #         "VLLM_ROCM_USE_AITER_FUSION_SHARED_EXPERTS is enabled"
+        #     )
 
         # Determine expert maps
         if self.use_ep:

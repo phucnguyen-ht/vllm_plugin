@@ -9,7 +9,6 @@ services:
       - /home/tester/phucnguyen:/home/tester/phucnguyen
       - /home/tester/data:/home/tester/data
 
-      - ../3rdparty/vllm:/usr/local/lib/python3.10/dist-packages/vllm
       - ../3rdparty/triton:/usr/local/lib/python3.10/dist-packages/triton
       - ../3rdparty/triton_kernels:/usr/local/lib/python3.10/dist-packages/triton_kernels
 

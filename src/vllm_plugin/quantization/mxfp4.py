@@ -1,14 +1,14 @@
 # TODO(anhduong): Refactor to import only what is needed instead of wildcard import
-from vllm_patch.model_executor.layers.quantization.mxfp4 import *
+from vllm.model_executor.layers.quantization.mxfp4 import *
 from vllm_plugin.fused_moe.layer import MorehFusedMoE
 from vllm.model_executor.layers.quantization import (register_quantization_config)
-from vllm_patch.model_executor.layers.quantization.utils.mxfp4_utils import (
+from vllm.model_executor.layers.quantization.utils.mxfp4_utils import (
     _can_support_mxfp4, _swizzle_mxfp4)
 
 from vllm.utils import round_up
 
 from vllm.logger import init_logger
-from vllm_patch.model_executor.layers.fused_moe.config import FusedMoEQuantConfig
+from vllm.model_executor.layers.fused_moe.config import FusedMoEQuantConfig
 from vllm_plugin import envs as moreh_envs
 from vllm_plugin.fused_moe.rocm_moreh_fused_moe import rocm_gptoss_moreh_moe_1stage
 # from vllm_moreh.quantization.utils.fused_moe_tuning import (
@@ -16,7 +16,7 @@ from vllm_plugin.fused_moe.rocm_moreh_fused_moe import rocm_gptoss_moreh_moe_1st
 #     is_fused_moe_1stage_better_than_2stages,
 # )
 
-from aiter import get_hip_quant, dtypes, QuantType
+# from aiter import get_hip_quant, dtypes, QuantType
 
 SHUFFLE_IN = 16
 SHUFFLE_IK = 16
@@ -224,7 +224,7 @@ class MorehMxfp4MoEMethod(Mxfp4MoEMethod):
         else:
             # mxfp4 path
             # routing + 2-staged MoE with triton kernels
-            from vllm_patch.model_executor.layers.fused_moe.gpt_oss_triton_kernels_moe import (  # noqa: E501
+            from vllm.model_executor.layers.fused_moe.gpt_oss_triton_kernels_moe import (  # noqa: E501
                 triton_kernel_moe_forward,
             )
             

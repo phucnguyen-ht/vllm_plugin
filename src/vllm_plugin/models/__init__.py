@@ -22,6 +22,10 @@ def register():
             "MorehGptOssForCausalLM",
             "vllm_plugin.models.gpt_oss:MorehGptOssForCausalLM",
         )
+        _register_moreh_custom_model(
+            "GptOssForCausalLM",
+            "vllm_plugin.models.gpt_oss:MorehGptOssForCausalLM",
+        )
         # _register_moreh_custom_model(
         #     "MorehGptOssForCausalLM",
         #     "vllm_plugin.models.gpt_oss:MorehGptOssForCausalLM",

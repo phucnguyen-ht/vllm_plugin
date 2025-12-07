@@ -7,6 +7,11 @@ fi
 
 if [ -z "$PYTORCH_ROCM_ARCH" ]; then
     PYTORCH_ROCM_ARCH="gfx928"
+    ROCM_ARCH="gfx928"
+fi
+
+if [ -z "$VLLM_TARGET_DEVICE" ]; then
+    VLLM_TARGET_DEVICE="rocm"
 fi
 
 VLLM_MOREH_DIR=$WORKING_DIR
@@ -27,13 +32,17 @@ VLLM_MOREH_DIR=$WORKING_DIR
 #     make install
 #     ln -s /opt/cmake-3.29.6/bin/cmake /usr/bin/cmake
 # fi
+# reinstall vllm
+pip uninstall -y vllm
+cd "$VLLM_MOREH_DIR/3rdparty/vllm" && git checkout feature/custom_moe_mxfp4
+pip install -e . --no-build-isolation  --index-url https://pypi.org/simple
 
 # install fused_moe
 cd "$VLLM_MOREH_DIR/3rdparty/fused_moe" && python3 setup.py develop
 
-# # replace aiter import error => unable to use aiter because of HIP Device Function
-# AITER_PACKAGE_DIR="/usr/local/lib/python3.10/dist-packages/aiter"
-# cp "$VLLM_MOREH_DIR/3rdparty/aiter/utility/dtypes.py" "$AITER_PACKAGE_DIR/utility/dtypes.py"
+# replace aiter import error => unable to use aiter because of HIP Device Function
+AITER_PACKAGE_DIR="/usr/local/lib/python3.10/dist-packages/aiter"
+cp "$VLLM_MOREH_DIR/3rdparty/aiter/utility/dtypes.py" "$AITER_PACKAGE_DIR/utility/dtypes.py"
 
 # install vllm-plugin
 rm -rf "$VLLM_MOREH_DIR/build" "$VLLM_MOREH_DIR/vllm_plugin.egg-info" "$VLLM_MOREH_DIR/src/vllm_plugin.egg-info"
