@@ -1,0 +1,4 @@
+[submodule "3rdparty/fused_moe"]
+	path = 3rdparty/fused_moe
+	url = git@github.com:moreh-dev/fused_moe.git
+	branch = phucnguyen/optimize_mxfp4_gptoss_hygon

@@ -556,7 +556,6 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
             )
             
             # print("Using triton forward...")
-
             return triton_kernel_moe_forward(
                 hidden_states=x,
                 w1=self.w13_weight_triton_tensor,

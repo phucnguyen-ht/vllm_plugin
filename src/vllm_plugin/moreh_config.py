@@ -9,7 +9,7 @@ from vllm import envs
 this_dir = os.path.dirname(os.path.abspath(__file__))
 VLLM_MOREH_ROOT_DIR = os.path.abspath(f"{this_dir}")
 
-MOREH_QUANTIZATION_METHOD = ["mixed", "dual", "fp8_per_block_to_per_token", "moreh_mxfp4", "mxfp4"]
+MOREH_QUANTIZATION_METHOD = ["mixed", "dual", "fp8_per_block_to_per_token", "moreh-mxfp4", "mxfp4"]
 
 @dataclass
 class MorehCompilationConfig:

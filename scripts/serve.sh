@@ -16,9 +16,11 @@ export VLLM_USE_AITER_UNIFIED_ATTENTION=0
 export VLLM_ROCM_USER_AITER_MHA=0
 export VLLM_USE_V1=1
 export MODEL_PATH=/home/tester/data/openai/gpt-oss-20b
+export VLLM_MOREH_USE_DUAL_MOE=1
 
+# Change moreh-mxfp4 -> mxfp4 to run original mxfp4
 vllm serve $MODEL_PATH \
-    --quantization mxfp4 \
+    --quantization moreh-mxfp4 \
     --enforce-eager \
     --trust-remote-code
     # --enable-prefix-caching \

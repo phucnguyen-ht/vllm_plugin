@@ -1047,7 +1047,7 @@ class CustomFusedMoE(CustomOp):
         expert_id: int,
         return_success: bool = False,
     ) -> bool | None:
-        if self.quant_config and self.quant_config.get_name() == "mxfp4":
+        if self.quant_config and "mxfp4" in self.quant_config.get_name():
             # (FIXME) for gpt-oss all experts are combined
             if "bias" in weight_name:
                 dim1 = loaded_weight.shape[1]
