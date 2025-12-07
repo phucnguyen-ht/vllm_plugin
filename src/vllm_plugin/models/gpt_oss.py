@@ -148,23 +148,37 @@ class MLPBlock(torch.nn.Module):
                                       config.num_local_experts,
                                       dtype=torch.bfloat16)
         assert config.intermediate_size % self.world_size == 0
-        self.experts = CustomFusedMoE(num_experts=config.num_local_experts,
-                                top_k=config.num_experts_per_tok,
-                                hidden_size=config.hidden_size,
-                                intermediate_size=config.intermediate_size,
-                                reduce_results=True,
-                                renormalize=True,
-                                quant_config=quant_config,
-                                prefix=f"{prefix}.experts",
-                                apply_router_weight_on_input=False,
-                                has_bias=True,
-                                activation="swigluoai")
+        if ("Moreh" in quant_config.__class__.__name__):
+            print(f"[INFO] Using MorehFusedMoE: {quant_config.__class__.__name__}")
+            self.experts = MorehFusedMoE(num_experts=config.num_local_experts,
+                                    top_k=config.num_experts_per_tok,
+                                    hidden_size=config.hidden_size,
+                                    intermediate_size=config.intermediate_size,
+                                    reduce_results=True,
+                                    renormalize=True,
+                                    quant_config=quant_config,
+                                    prefix=f"{prefix}.experts",
+                                    apply_router_weight_on_input=False,
+                                    has_bias=True,
+                                    activation="swigluoai")
+        else:
+            print(f"[INFO] Using CustomFusedMoE: {quant_config.__class__.__name__}")
+            self.experts = CustomFusedMoE(num_experts=config.num_local_experts,
+                                    top_k=config.num_experts_per_tok,
+                                    hidden_size=config.hidden_size,
+                                    intermediate_size=config.intermediate_size,
+                                    reduce_results=True,
+                                    renormalize=True,
+                                    quant_config=quant_config,
+                                    prefix=f"{prefix}.experts",
+                                    apply_router_weight_on_input=False,
+                                    has_bias=True,
+                                    activation="swigluoai")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         g = self.router(x)
         x = self.experts(hidden_states=x, router_logits=g)
         return x
-
 
 class TransformerBlock(torch.nn.Module):
 
@@ -460,6 +474,8 @@ class GptOssModel(nn.Module):
                     # (only load on rank 0 to avoid duplication)
                     if tp_rank != 0:
                         weight.zero_()
+                    
+                # print(f".w2_bias: {name = }, {param.shape = }, {weight_loader}, {use_ep = }, {tp_rank = }")
                 weight_loader(param,
                               weight,
                               weight_name=name,

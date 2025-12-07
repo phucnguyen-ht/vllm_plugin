@@ -1,0 +1,4 @@
+**/__pycache__
+
+3rdparty/triton
+3rdparty/triton_kernels

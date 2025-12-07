@@ -214,7 +214,7 @@ class MorehFusedMoE(CustomFusedMoE):
             num_local_experts=self.local_num_experts,
             moe_parallel_config=self.moe_parallel_config,
             in_dtype=moe_in_dtype,
-            max_num_tokens=envs.VLLM_MOE_DP_CHUNK_SIZE,
+            max_num_tokens=getattr(envs, 'VLLM_MOE_DP_CHUNK_SIZE', 256),
             has_bias=has_bias,
         )
         self.moe_config = moe
@@ -313,22 +313,4 @@ class MorehFusedMoE(CustomFusedMoE):
             or self.moe_parallel_config.use_mori_kernels
             or (self.dp_size > 1 and self.use_flashinfer_cutlass_kernels)
         )
-        
-    def _init_aiter_shared_experts_topK_buffer(
-        self, vllm_config: VllmConfig, dp_size: int
-    ):
-        if is_rocm_aiter_fusion_shared_expert_enabled():
-            if self.num_fused_shared_experts > 0:
-                init_aiter_topK_meta_data(
-                    n_routed_experts=self.global_num_experts,
-                    n_shared_experts=self.num_fused_shared_experts,
-                    top_k=self.top_k,
-                    tp_rank=self.ep_rank if self.use_ep else self.tp_rank,
-                    tp_size=self.ep_size if self.use_ep else self.tp_size,
-                    shared_experts_score=1.0,
-                    max_num_tokens=vllm_config.scheduler_config.max_num_batched_tokens
-                    * dp_size,
-                    is_EP=self.use_ep,
-                )
-            self.local_num_experts += self.num_fused_shared_experts
     
