@@ -1,0 +1,4 @@
+[vllm.general_plugins]
+register_custom_model = vllm_plugin.models:register
+register_post_parsed_function = vllm_plugin.moreh_config:register_post_parsed_function
+register_quantization_config = vllm_plugin.quantization:register

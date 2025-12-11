@@ -20,7 +20,7 @@ export VLLM_MOREH_USE_DUAL_MOE=1
 
 # Change moreh-mxfp4 -> mxfp4 to run original mxfp4
 vllm serve $MODEL_PATH \
-    --quantization mxfp4 \
+    --quantization moreh-mxfp4 \
     --enforce-eager \
     --trust-remote-code
     # --enable-prefix-caching \

@@ -77,7 +77,7 @@ class MorehMxfp4MoEMethod(Mxfp4MoEMethod):
         scale_dtype = torch.uint8
         mxfp4_block = 32
         
-        logger.info_once(f"{hidden_size = }, {num_experts = }, {intermediate_size_per_partition = }, {extra_weight_attrs = }")
+        print(f"{hidden_size = }, {num_experts = }, {intermediate_size_per_partition = }, {extra_weight_attrs = }")
         # Not roundup to pad
         self.intermediate_size = intermediate_size_per_partition_after_pad
         self.hidden_size = hidden_size
@@ -193,12 +193,12 @@ class MorehMxfp4MoEMethod(Mxfp4MoEMethod):
         if is_moreh_dual_moe_enabled():
             from aiter.fused_moe import fused_topk
             
-            topk_weights, topk_ids = fused_topk(x, router_logits, top_k, False)
+            topk_weights, topk_ids = fused_topk(x, router_logits, top_k, renormalize)
             group_size = 32
             
-            logger.info_once(f"[Moreh MXFP4 debug] {x.shape = }, {router_logits.shape = }, {top_k = }, {topk_ids.shape = }, {topk_weights.shape = }, {torch.topk(router_logits, 5) = }")
-            logger.info_once(f"[Moreh MXFP4 debug] {x.dtype = }, {self.w1_qweight_shuffled.dtype = }, {self.w2_qweight_shuffled = }"
-                             f"{layer.w13_weight_scale.dtype = }, {layer.w2_weight_scale.dtype = }, {layer.w13_bias.dtype = }, {layer.w2_bias.dtype = }")
+            # print(f"[Moreh MXFP4 debug] {x.shape = }, {router_logits.shape = }, {top_k = }, {topk_ids.shape = }, {topk_weights.shape = }, {torch.topk(router_logits, 5) = }")
+            # print(f"[Moreh MXFP4 debug] {x.dtype = }, {self.w1_qweight_shuffled.dtype = }, {self.w2_qweight_shuffled = }"
+            #                  f"{layer.w13_weight_scale.dtype = }, {layer.w2_weight_scale.dtype = }, {layer.w13_bias.dtype = }, {layer.w2_bias.dtype = }")
             
             kernel_kwargs = dict(
                 hidden_states=x,
@@ -376,9 +376,9 @@ class MorehMxfp4MoEMethod(Mxfp4MoEMethod):
             # print(f"{e = }, {n = }, {k = }, {type(w1_qweight) = }, {w1_qweight.shape = }, {w1_qweight.dtype = }, {w1_qweight.device = }")
             # print(f"{e = }, {n = }, {k = }, {type(w2_qweight) = }, {w2_qweight.shape = }, {w2_qweight.dtype = }, {w2_qweight.device = }")
             # shuffle w1_qweight
-            self.w1_qweight_shuffled = w1_qweight.view(e, 2 * n, (k // 2) // 64, K_UNROLL, 4, 4).transpose(-3, -2).reshape(e, 2 * n, (k // 2))
+            self.w1_qweight_shuffled = w1_qweight.view(e, 2 * n, (k // 2) // 32, K_UNROLL, 4, 2).transpose(-3, -2).reshape(e, 2 * n, (k // 2))
             # shuffle w2_qweight
-            self.w2_qweight_shuffled = w2_qweight.view(e, k, (n // 2) // 64, K_UNROLL, 4, 4).transpose(-3, -2).reshape(e, k, n // 2)
+            self.w2_qweight_shuffled = w2_qweight.view(e, k, (n // 2) // 32, K_UNROLL, 4, 2).transpose(-3, -2).reshape(e, k, n // 2)
             
             del layer.w13_weight
             del layer.w2_weight

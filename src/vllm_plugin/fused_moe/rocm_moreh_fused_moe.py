@@ -68,7 +68,7 @@ GELU_APPROX_NAME_TO_ID = {
     "tanh": 1,
 }
 
-import custom_moe_gfx928
+import custom_moe_gfx928_hygon
 
 # Original implementation: https://github.com/ROCm/aiter/blob/main/op_tests/test_moe_sorting.py 
 def moe_sorting_naive(
@@ -170,7 +170,7 @@ def rocm_gptoss_moreh_moe_1stage(
     sorted_token_ids, sorted_weight_buf, sorted_expert_ids, num_valid_ids = \
         moe_sorting_naive(topk_ids, topk_weights, E, None, LOCAL_BLOCK_SIZE_M)
         
-    out_ck = torch.empty((num_token, model_dim), dtype=hidden_states.dtype, device=hidden_states.device)
+    out_ck = torch.zeros((num_token, model_dim), dtype=torch.float, device=hidden_states.device)
 
     # gelu_approx = "none"
     # activation_id = ACTIVATION_NAME_TO_ID[activation]
@@ -179,7 +179,7 @@ def rocm_gptoss_moreh_moe_1stage(
     # SHUFFLE_IK = shuffle_ik
     # num_parallel_by_interdim = tuning_config.PARALLEL_INTER_DIM or 1
 
-    gptoss_moe_1stage(
+    out_ck = gptoss_moe_1stage(
         hidden_states, w1, w2, None, w1_scale, w2_scale,
         w1_bias, w2_bias,
         out_ck, sorted_token_ids,
@@ -188,7 +188,7 @@ def rocm_gptoss_moreh_moe_1stage(
         inter_dim, model_dim, alpha, limit
     )
     
-    return out_ck
+    return out_ck.to(torch.bfloat16)
 
 def gptoss_moe_1stage(
     hidden_states: torch.Tensor,
@@ -224,8 +224,8 @@ def gptoss_moe_1stage(
             "available on ROCM platform. Current device: "
             f"{torch.cuda.get_device_name().lower()}")
     
-    custom_moe_gfx928.launch_FusedMoeWmxfp4A8(
-        hidden_states, w1, w2, a_scale, w1_scale, w2_scale,
+    custom_moe_gfx928_hygon.launch_FusedMoeWmxfp4A16_hygon(
+        hidden_states, w1, w2, w1_scale, w2_scale,
         w1_bias, w2_bias,
         output, sorted_token_ids,
         sorted_weight, sorted_expert_ids,
