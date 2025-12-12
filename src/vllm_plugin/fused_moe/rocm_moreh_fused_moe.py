@@ -160,7 +160,7 @@ def rocm_gptoss_moreh_moe_1stage(
     tuning_config = tuning_config or TuningConfig()
     num_token = hidden_states.shape[0]
     model_dim = hidden_states.shape[-1]
-    inter_dim = w2.shape[-1]
+    inter_dim = w2.shape[-1] * 2
     topk = topk_ids.shape[-1]
     E = w1.shape[0]
     LOCAL_BLOCK_SIZE_M = tuning_config.LOCAL_BLOCK_SIZE_M or 16

@@ -70,14 +70,21 @@ class Mxfp4Backend(Enum):
     # Triton Backend
     TRITON = 6
 
+    # 
+    CUSTOM=7
+
 
 def get_mxfp4_backend():
     # Backend Selection
     if current_platform.is_cuda():
         raise ValueError("Not supported CUDA platform")
-    elif current_platform.is_rocm() and has_triton_kernels():
-        logger.info_once("Using Triton backend")
-        return Mxfp4Backend.TRITON
+    elif current_platform.is_rocm():
+        if has_triton_kernels():
+            logger.info_once("Using Triton backend")
+            return Mxfp4Backend.TRITON
+        else:
+            logger.info_once("Using Custom backend")
+            return Mxfp4Backend.CUSTOM
 
     return Mxfp4Backend.NONE
 
@@ -137,10 +144,10 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
             get_current_vllm_config().compilation_config.max_capture_size
         )
 
-        assert self.mxfp4_backend != Mxfp4Backend.NONE, (
-            "No MXFP4 MoE backend (FlashInfer/Marlin/Triton) available."
-            "Please check your environment and try again."
-        )
+        # assert self.mxfp4_backend != Mxfp4Backend.NONE, (
+        #     "No MXFP4 MoE backend (FlashInfer/Marlin/Triton) available."
+        #     "Please check your environment and try again."
+        # )
         self._cache_permute_indices: dict[torch.Size, torch.Tensor] = {}
         print(f"Using Mxfp4MoEMethod with config: {moe = }")
 

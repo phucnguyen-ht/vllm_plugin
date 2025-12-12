@@ -26,6 +26,52 @@ logger = init_logger(__name__)
 def is_moreh_dual_moe_enabled():
     return moreh_envs.VLLM_MOREH_USE_DUAL_MOE
 
+def clone_and_upcast_mxfp_weight(weight, scale, axis=1, target_dtype=torch.bfloat16, target_device="cuda:0"):
+    """
+    Clone MXFP4 weight, move to device cuda:0, upcast to target dtype, then move back to target device.
+    """
+    # Avoid in-place operation on the original tensor
+    # upcast_from_mxfp only works on cuda:0
+    weight_clone = weight.data.clone().to("cuda:0")
+    scale_clone = scale.data.clone().to("cuda:0")
+
+    from vllm_plugin.quantization.utils.mxfp4_utils import upcast_from_mxfp
+    upcasted = upcast_from_mxfp(weight_clone, scale_clone, target_dtype, axis=axis)
+
+    # Cleanup clones immediately after use
+    del weight_clone, scale_clone
+    return Parameter(upcasted.to(target_device)) # move back to target device
+
+class SwigluOAIAndMul2():
+    # https://github.com/huggingface/transformers/blob/v4.55.0/src/transformers/models/gpt_oss/modeling_gpt_oss.py#L106-L110
+    def __init__(self, alpha: float = 1.702, limit: float = 7.0):
+        super().__init__()
+        self.alpha = alpha
+        self.limit = limit
+
+    def apply(self, x: torch.Tensor) -> torch.Tensor:
+        return self.forward_native(x)
+    
+    def forward_native(self, x: torch.Tensor) -> torch.Tensor:
+        """PyTorch-native implementation equivalent to forward()."""
+
+        gate, up = x[..., ::2], x[..., 1::2]
+        gate = gate.clamp(min=None, max=self.limit)
+        up = up.clamp(min=-self.limit, max=self.limit)
+        glu = gate * torch.sigmoid(gate * self.alpha)
+        gated_output = (up + 1) * glu
+        return gated_output
+
+    def forward_cuda(self, x: torch.Tensor) -> torch.Tensor:
+        d = x.shape[-1] // 2
+        output_shape = x.shape[:-1] + (d,)
+        out = torch.empty(output_shape, dtype=x.dtype, device=x.device)
+        torch.ops._C.swigluoai_and_mul(out, x, self.alpha, self.limit)
+        return out
+
+    def extra_repr(self) -> str:
+        return f"alpha={repr(self.alpha)}, limit={repr(self.limit)}"
+    
 @register_quantization_config("moreh-mxfp4")
 class MorehMxfp4Config(Mxfp4Config):
     @classmethod
@@ -50,7 +96,61 @@ class MorehMxfp4Config(Mxfp4Config):
                 "Mxfp4 attention layer is not implemented")
         return None
 
+def torch_moe(a, w1, w2, topk_weights, topk_ids, w1_bias, w2_bias):
+    B, D = a.shape
+    topk = topk_ids.shape[-1]
+    a = a.view(B, -1, D).repeat(1, topk, 1).reshape(-1, D)
+    out = torch.zeros(B * topk, w2.shape[1], dtype=a.dtype, device=a.device)
+    topk_weights = topk_weights.view(-1)
+    topk_ids = topk_ids.view(-1)
+    for i in range(w1.shape[0]):
+        mask = topk_ids == i
+        if mask.sum():
+            out[mask] = SwigluOAIAndMul2().apply(
+                a[mask] @ w1[i].transpose(0, 1) + w1_bias[i]) @ w2[i].transpose(0, 1) + w2_bias[i]
 
+            # # Debug: print stage1 result
+            # # torch.set_printoptions(threshold=float("inf"))
+            # torch.set_printoptions(threshold=1, edgeitems=10)
+            # x = a[mask] @ w1[i].transpose(0, 1) + w1_bias[i]
+            # print(f"[torch] expert = {i}")
+            # #     print(f"{a[mask]=}")
+            # # print(f"{w1[i]=}")
+            # print(f"[torch] mm1res shape = {x.shape}")
+            # print(f"[torch] mm1res = {x}")
+            # # End of debug
+
+    return (out.view(B, -1, w2.shape[1]) *
+            topk_weights.view(B, -1, 1).to(out.dtype)).sum(dim=1)
+
+def fused_topk_native(
+    hidden_states: torch.Tensor,
+    gating_output: torch.Tensor,
+    topk: int,
+    renormalize: bool,
+):
+    assert hidden_states.shape[0] == gating_output.shape[0], "Number of tokens mismatch"
+
+    M, _ = hidden_states.shape
+
+    gating_output = torch.nn.functional.softmax(
+        gating_output.float(),
+        dim=-1,
+    )
+    topk_weights, topk_ids = gating_output.topk(
+        k=topk,
+        dim=-1,
+        largest=True,
+        sorted=True,
+    )
+
+    if renormalize:
+        topk_weights = topk_weights / topk_weights.sum(dim=-1, keepdim=True)
+
+    return topk_weights, topk_ids.to(torch.int32)
+        
+        
+USE_TORCH = False
 class MorehMxfp4MoEMethod(Mxfp4MoEMethod):
     def create_weights(
         self,
@@ -190,36 +290,73 @@ class MorehMxfp4MoEMethod(Mxfp4MoEMethod):
             logical_replica_count), (
                 "MXFP4 are not supported with this configuration.")
 
+        global USE_TORCH
+        
         if is_moreh_dual_moe_enabled():
-            from aiter.fused_moe import fused_topk
-            
-            topk_weights, topk_ids = fused_topk(x, router_logits, top_k, renormalize)
-            group_size = 32
-            
-            # print(f"[Moreh MXFP4 debug] {x.shape = }, {router_logits.shape = }, {top_k = }, {topk_ids.shape = }, {topk_weights.shape = }, {torch.topk(router_logits, 5) = }")
-            # print(f"[Moreh MXFP4 debug] {x.dtype = }, {self.w1_qweight_shuffled.dtype = }, {self.w2_qweight_shuffled = }"
-            #                  f"{layer.w13_weight_scale.dtype = }, {layer.w2_weight_scale.dtype = }, {layer.w13_bias.dtype = }, {layer.w2_bias.dtype = }")
-            
-            kernel_kwargs = dict(
-                hidden_states=x,
-                w1=self.w1_qweight_shuffled,
-                w2=self.w2_qweight_shuffled,
-                w1_scale=layer.w13_weight_scale,
-                w2_scale=layer.w2_weight_scale,
-                w1_bias=layer.w13_bias,
-                w2_bias=layer.w2_bias,
-                topk_weights=topk_weights,
-                topk_ids=topk_ids,
-                activation=activation,
-                apply_router_weight_on_input=apply_router_weight_on_input,
-                global_num_experts=global_num_experts,
-                expert_map=expert_map,
-                tuning_config=None,
-                block_shape=[0, group_size],
-                a_scale=None
-            )
+            if USE_TORCH:
+                topk_weights, topk_ids = fused_topk_native(x, router_logits, top_k, renormalize)
+                group_size = 32
 
-            return rocm_gptoss_moreh_moe_1stage(**kernel_kwargs)
+                target_device = layer.w13_weight.data.device
+                target_dtype = torch.bfloat16
+                self.w1_dequant = clone_and_upcast_mxfp_weight(
+                    layer.w13_weight,
+                    layer.w13_weight_scale,
+                    axis=-1,
+                    target_dtype=target_dtype,
+                    target_device=target_device,
+                )
+                self.w2_dequant = clone_and_upcast_mxfp_weight(
+                    layer.w2_weight,
+                    layer.w2_weight_scale,
+                    axis=-1,
+                    target_dtype=target_dtype,
+                    target_device=target_device,
+                )
+                out = torch_moe(
+                    x, self.w1_dequant, self.w2_dequant, topk_weights, topk_ids, 
+                    layer.w13_bias, layer.w2_bias
+                )
+
+                # print(f"[Moreh MXFP4 debug] {x.shape = }, {router_logits.shape = }, {top_k = }, {topk_ids.shape = }, {topk_weights.shape = }"
+                #       f"{out.shape = }, {self.w1_dequant.shape = }, {self.w2_dequant.shape = }")
+
+                del self.w1_dequant
+                del self.w2_dequant
+                self.w1_dequant = None
+                self.w2_dequant = None
+                return out
+            else:
+                # from aiter.fused_moe import fused_topk
+                # topk_weights, topk_ids = fused_topk(x, router_logits, top_k, renormalize)
+                
+                topk_weights, topk_ids = fused_topk_native(x, router_logits, top_k, renormalize)
+                group_size = 32
+                
+                # print(f"[Moreh MXFP4 debug] {x.shape = }, {router_logits.shape = }, {top_k = }, {topk_ids.shape = }, {topk_weights.shape = }, {torch.topk(router_logits, 5) = }")
+                # print(f"[Moreh MXFP4 debug] {x.dtype = }, {self.w1_qweight_shuffled.dtype = }, {self.w2_qweight_shuffled = }"
+                #                  f"{layer.w13_weight_scale.dtype = }, {layer.w2_weight_scale.dtype = }, {layer.w13_bias.dtype = }, {layer.w2_bias.dtype = }")
+                
+                kernel_kwargs = dict(
+                    hidden_states=x,
+                    w1=self.w1_qweight_shuffled,
+                    w2=self.w2_qweight_shuffled,
+                    w1_scale=layer.w13_weight_scale,
+                    w2_scale=layer.w2_weight_scale,
+                    w1_bias=layer.w13_bias,
+                    w2_bias=layer.w2_bias,
+                    topk_weights=topk_weights,
+                    topk_ids=topk_ids,
+                    activation=activation,
+                    apply_router_weight_on_input=apply_router_weight_on_input,
+                    global_num_experts=global_num_experts,
+                    expert_map=expert_map,
+                    tuning_config=None,
+                    block_shape=[0, group_size],
+                    a_scale=None
+                )
+
+                return rocm_gptoss_moreh_moe_1stage(**kernel_kwargs)
             
         else:
             # mxfp4 path
@@ -243,6 +380,7 @@ class MorehMxfp4MoEMethod(Mxfp4MoEMethod):
             )
 
     def process_weights_after_loading(self, layer):
+        global USE_TORCH
         if is_moreh_dual_moe_enabled():
             # from triton_kernels.matmul_ogs import FlexCtx, PrecisionConfig
             
@@ -348,43 +486,44 @@ class MorehMxfp4MoEMethod(Mxfp4MoEMethod):
             # torch.cuda.empty_cache()
 
             # Remove negative zero from w1_qweight
-            w1_qweight = layer.w13_weight       # (e, 2 * n, k / 2)
-            w2_qweight = layer.w2_weight        # (e, k, n / 2)
-            # w1_scales = layer.w13_weight_scale  # (e, 2 * n, k / 2)
-            # w2_scales = layer.w2_weight_scale   # (e, k, n / 32)
-            
-            e, n = layer.w13_bias.shape; n = n // 2
-            _, k = layer.w2_bias.shape
-            
-            w1_qweight_left = w1_qweight & 0b11110000
-            w1_qweight_right = w1_qweight & 0b00001111
-            w1_qweight_left[w1_qweight_left == 0b10000000] = 0
-            w1_qweight_right[w1_qweight_right == 0b00001000] = 0
-            w1_qweight = w1_qweight_left | w1_qweight_right
+            if not USE_TORCH:
+                w1_qweight = layer.w13_weight       # (e, 2 * n, k / 2)
+                w2_qweight = layer.w2_weight        # (e, k, n / 2)
+                # w1_scales = layer.w13_weight_scale  # (e, 2 * n, k / 2)
+                # w2_scales = layer.w2_weight_scale   # (e, k, n / 32)
+                
+                e, n = layer.w13_bias.shape; n = n // 2
+                _, k = layer.w2_bias.shape
+                
+                w1_qweight_left = w1_qweight & 0b11110000
+                w1_qweight_right = w1_qweight & 0b00001111
+                w1_qweight_left[w1_qweight_left == 0b10000000] = 0
+                w1_qweight_right[w1_qweight_right == 0b00001000] = 0
+                w1_qweight = w1_qweight_left | w1_qweight_right
 
-            # Remove negative zero from w2_qweight
-            w2_qweight_left = w2_qweight & 0b11110000
-            w2_qweight_right = w2_qweight & 0b00001111
-            w2_qweight_left[w2_qweight_left == 0b10000000] = 0
-            w2_qweight_right[w2_qweight_right == 0b00001000] = 0
-            w2_qweight = w2_qweight_left | w2_qweight_right
+                # Remove negative zero from w2_qweight
+                w2_qweight_left = w2_qweight & 0b11110000
+                w2_qweight_right = w2_qweight & 0b00001111
+                w2_qweight_left[w2_qweight_left == 0b10000000] = 0
+                w2_qweight_right[w2_qweight_right == 0b00001000] = 0
+                w2_qweight = w2_qweight_left | w2_qweight_right
 
-            K_UNROLL = 4
-            MFMA_SIZE_MN = 16
-            MXFP4_BLOCK_SIZE = 32
-            
-            # print(f"{e = }, {n = }, {k = }, {type(w1_qweight) = }, {w1_qweight.shape = }, {w1_qweight.dtype = }, {w1_qweight.device = }")
-            # print(f"{e = }, {n = }, {k = }, {type(w2_qweight) = }, {w2_qweight.shape = }, {w2_qweight.dtype = }, {w2_qweight.device = }")
-            # shuffle w1_qweight
-            self.w1_qweight_shuffled = w1_qweight.view(e, 2 * n, (k // 2) // 32, K_UNROLL, 4, 2).transpose(-3, -2).reshape(e, 2 * n, (k // 2))
-            # shuffle w2_qweight
-            self.w2_qweight_shuffled = w2_qweight.view(e, k, (n // 2) // 32, K_UNROLL, 4, 2).transpose(-3, -2).reshape(e, k, n // 2)
-            
-            del layer.w13_weight
-            del layer.w2_weight
-            layer.w13_weight = None
-            layer.w2_weight = None
-            torch.cuda.empty_cache()
+                K_UNROLL = 4
+                MFMA_SIZE_MN = 16
+                MXFP4_BLOCK_SIZE = 32
+                
+                # print(f"{e = }, {n = }, {k = }, {type(w1_qweight) = }, {w1_qweight.shape = }, {w1_qweight.dtype = }, {w1_qweight.device = }")
+                # print(f"{e = }, {n = }, {k = }, {type(w2_qweight) = }, {w2_qweight.shape = }, {w2_qweight.dtype = }, {w2_qweight.device = }")
+                # shuffle w1_qweight
+                self.w1_qweight_shuffled = w1_qweight.view(e, 2 * n, (k // 2) // 32, K_UNROLL, 4, 2).transpose(-3, -2).reshape(e, 2 * n, (k // 2))
+                # shuffle w2_qweight
+                self.w2_qweight_shuffled = w2_qweight.view(e, k, (n // 2) // 32, K_UNROLL, 4, 2).transpose(-3, -2).reshape(e, k, n // 2)
+                
+                del layer.w13_weight
+                del layer.w2_weight
+                layer.w13_weight = None
+                layer.w2_weight = None
+                torch.cuda.empty_cache()
         else:
             super().process_weights_after_loading(layer)
             

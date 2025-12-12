@@ -5,3 +5,9 @@ __pycache__
 3rdparty/triton
 3rdparty/triton_kernels
 3rdparty/cmake-3.29.6
+3rdparty/vllm/ 
+
+
+tmp/
+tmp/_local_remotes/
+_local_remotes/

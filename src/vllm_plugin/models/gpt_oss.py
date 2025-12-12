@@ -35,6 +35,11 @@ from vllm.model_executor.models.utils import (
 from vllm_plugin.models.gpt_oss_config import GptOssConfig
 from vllm_plugin.fused_moe.layer import MorehFusedMoE, CustomFusedMoE
 
+from vllm.v1.worker.gpu_model_runner import FILE_LOG
+from vllm_plugin.utils.utils import print_debug
+
+from vllm.logger import init_logger
+logger = init_logger(__name__)
 
 class OAIAttention(nn.Module):
     def __init__(
@@ -51,6 +56,7 @@ class OAIAttention(nn.Module):
         self.num_key_value_heads = config.num_key_value_heads
         self.hidden_size = config.hidden_size
 
+        print("-" * 200); print(f"{config.rope_scaling = }"); print(f"{config = }"); print("-" * 200)
         self.rotary_emb = get_rope(
             self.head_dim,
             rotary_dim=self.head_dim,
@@ -276,7 +282,9 @@ class GptOssModel(nn.Module):
                 x = inputs_embeds
             else:
                 x = self.get_input_embeddings(input_ids)
-
+                print_debug(input_ids, file_path=FILE_LOG, name="input_ids", print_shape=True)
+                print_debug(x, file_path=FILE_LOG, name="input_embeds")
+                
             residual = None
         else:
             assert intermediate_tensors is not None
@@ -286,12 +294,15 @@ class GptOssModel(nn.Module):
         for i in range(self.start_layer, self.end_layer):
             layer = self.layers[i]
             x, residual = layer(x, positions, residual)
+            print_debug(x, file_path=FILE_LOG, name=f"x layer {i}", layer=i, dash=50)
+
         if not get_pp_group().is_last_rank:
             return IntermediateTensors({
                 "hidden_states": x,
                 "residual": residual
             })
         x, _ = self.norm(x, residual)
+        print_debug(x, file_path=FILE_LOG, name=f"x after forward", dash=100)
         return x
 
     def _load_weights_mxfp4(
@@ -659,7 +670,10 @@ class GptOssModel(nn.Module):
 
         quant_method = (self.config.quantization_config['quant_method'] if
                         hasattr(self.config, "quantization_config") else None)
-        if quant_method in ("mxfp4", "moreh_mxfp4"):
+        print(f"-" * 100)
+        print(f"-> {quant_method = }")
+        print(f"-" * 100)
+        if quant_method in ("mxfp4", "moreh-mxfp4"):
             return self._load_weights_mxfp4(ep_rank_start, ep_rank_end,
                                             heads_per_rank, head_start,
                                             weights, stacked_params_mapping)
@@ -727,15 +741,17 @@ class MorehGptOssForCausalLM(nn.Module, SupportsPP):
                 positions: torch.Tensor,
                 intermediate_tensors: Optional[IntermediateTensors] = None,
                 inputs_embeds: Optional[torch.Tensor] = None) -> torch.Tensor:
-        return self.model(input_ids, positions, intermediate_tensors,
+
+        model_output = self.model(input_ids, positions, intermediate_tensors,
                           inputs_embeds)
+        return model_output
 
     def compute_logits(
         self, hidden_states: torch.Tensor,
         sampling_metadata: SamplingMetadata,
     ) -> torch.Tensor:
-        print("Call compute_logits...")
         logits = self.logits_processor(self.lm_head, hidden_states, sampling_metadata)
+        print_debug(logits, file_path=FILE_LOG, name=f"logits", dash=200)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str,
@@ -752,6 +768,5 @@ class MorehGptOssForCausalLM(nn.Module, SupportsPP):
         logits: torch.Tensor,
         sampling_metadata: SamplingMetadata,
     ) -> Optional[SamplerOutput]:
-        print("Call sampling...")
         next_tokens = self.sampler(logits, sampling_metadata)
         return next_tokens
