@@ -10,6 +10,7 @@
 # # DP8-EP
 # export VLLM_SERVER_DEV_MODE=1
 # export VLLM_ROCM_USE_AITER_MOE=0
+export VLLM_USE_OPT_OP=1
 
 export VLLM_ROCM_USE_AITER=0
 export VLLM_USE_AITER_UNIFIED_ATTENTION=0
@@ -22,5 +23,4 @@ export VLLM_MOREH_USE_DUAL_MOE=1
 vllm serve $MODEL_PATH \
     --max-model-len 1024 \
     --enforce-eager \
-    --trust-remote-code
     # --enable-prefix-caching \

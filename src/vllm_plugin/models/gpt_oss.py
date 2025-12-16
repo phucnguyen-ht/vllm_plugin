@@ -28,15 +28,14 @@ from vllm.model_executor.layers.sampler import SamplerOutput, get_sampler
 
 from vllm.model_executor.models.interfaces import SupportsPP
 from vllm.model_executor.models.utils import (
-    AutoWeightsLoader, WeightsMapper, extract_layer_index,
+    AutoWeightsLoader, WeightsMapper, extract_layer_index, PPMissingLayer,
     is_pp_missing_parameter, make_empty_intermediate_tensors_factory,
     make_layers, maybe_prefix)
 
 from vllm_plugin.models.gpt_oss_config import GptOssConfig
 from vllm_plugin.fused_moe.layer import MorehFusedMoE, CustomFusedMoE
 
-from vllm.v1.worker.gpu_model_runner import FILE_LOG
-from vllm_plugin.utils.utils import print_debug
+from vllm.debug import FILE_LOG, print_debug, print_debug_text, print_debug_dash
 
 from vllm.logger import init_logger
 logger = init_logger(__name__)
@@ -204,7 +203,7 @@ class TransformerBlock(torch.nn.Module):
                             self.layer_idx,
                             quant_config=quant_config,
                             prefix=f"{prefix}.mlp")
-        self.input_layernorm = RMSNorm(config.hidden_size, eps=1e-5)
+        self.input_layernorm = RMSNorm(config.hidden_size, eps=1e-5,name="input_layernorm")
         self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=1e-5)
 
     def forward(
@@ -214,17 +213,36 @@ class TransformerBlock(torch.nn.Module):
         residual: Optional[torch.Tensor],
     ) -> torch.Tensor:
         # Self Attention
+        use_residual = residual is not None
+        # print_debug(hidden_states, file_path=FILE_LOG, name=f"[before   INPUT_LAYER_NORM] hidden_states")
+        # if use_residual:
+        #     print_debug(residual, file_path=FILE_LOG, name=f"[before   INPUT_LAYER_NORM] residual", dash=25)
+        # else:
+        #     print_debug_text(FILE_LOG, f"[before   INPUT_LAYER_NORM] residual is None")    
+
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
         else:
             hidden_states, residual = self.input_layernorm(
                 hidden_states, residual)
+            
+        print_debug(hidden_states, file_path=FILE_LOG, name=f"[after   INPUT_LAYER_NORM] hidden_states")
+        if use_residual:
+            print_debug(residual, file_path=FILE_LOG, name=f"[after   INPUT_LAYER_NORM] residual", dash=25)
+        else:
+            print_debug_text(FILE_LOG, f"[after   INPUT_LAYER_NORM] residual is None")
+
         hidden_states = self.attn(hidden_states, positions)
+        print_debug(hidden_states, file_path=FILE_LOG, name=f"[after   ATTENTION] hidden_states", dash=25)
         # Fully Connected
         hidden_states, residual = self.post_attention_layernorm(
             hidden_states, residual)
+        print_debug(hidden_states, file_path=FILE_LOG, name=f"[after  _POST_ATTENTION NORM] hidden_states")
+        print_debug(residual, file_path=FILE_LOG, name=f"[after  _POST_ATTENTION NORM] residual", dash=25)
+
         output = self.mlp(hidden_states)
+        print_debug(output, file_path=FILE_LOG, name=f"[after  MLP] output", dash=25)
         return output, residual
 
 
@@ -292,9 +310,13 @@ class GptOssModel(nn.Module):
             residual = intermediate_tensors["residual"]
 
         for i in range(self.start_layer, self.end_layer):
+            print_debug_text(FILE_LOG, f">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> START Layer {i}")
             layer = self.layers[i]
             x, residual = layer(x, positions, residual)
-            print_debug(x, file_path=FILE_LOG, name=f"x layer {i}", layer=i, dash=50)
+            print_debug(positions, file_path=FILE_LOG, name=f"positions layer {i}", layer=-1)
+            print_debug(x, file_path=FILE_LOG, name=f"x layer {i}", layer=i)
+            print_debug(residual, file_path=FILE_LOG, name=f"residual layer {i}", layer=-1, dash=50)
+            print_debug_text(FILE_LOG, f">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> END Layer {i}")
 
         if not get_pp_group().is_last_rank:
             return IntermediateTensors({
@@ -733,6 +755,59 @@ class MorehGptOssForCausalLM(nn.Module, SupportsPP):
         self.sampler = get_sampler()
         print(f"Using MorehGptOssForCausalLM with VLLM config = {self.vllm_config}")
 
+    # def __init__(
+    #     self,
+    #     vllm_config: VllmConfig,
+    #     prefix: str = "",
+    # ):
+    #     super().__init__()
+    #     self.vllm_config = vllm_config
+    #     # self.config = vllm_config.model_config.hf_config   
+
+    #     config = vllm_config.model_config.hf_config
+    #     quant_config = vllm_config.quant_config
+    #     lora_config = vllm_config.lora_config
+
+    #     self.config = config
+    #     self.lora_config = lora_config
+    #     self.quant_config = quant_config
+
+    #     self.model = GptOssModel(
+    #         vllm_config=vllm_config,
+    #         prefix=maybe_prefix(prefix, "model"),
+    #     )
+
+    #     if get_pp_group().is_last_rank:
+    #         self.unpadded_vocab_size = config.vocab_size
+    #         DEFAULT_VOCAB_PADDING_SIZE=64
+    #         if lora_config:
+    #             self.unpadded_vocab_size += lora_config.lora_extra_vocab_size
+    #         self.lm_head = ParallelLMHead(
+    #             self.unpadded_vocab_size,
+    #             config.hidden_size,
+    #             org_num_embeddings=config.vocab_size,
+    #             padding_size=DEFAULT_VOCAB_PADDING_SIZE
+    #             # We need bigger padding if using lora for kernel
+    #             # compatibility
+    #             if not lora_config else lora_config.lora_vocab_padding_size,
+    #             quant_config=quant_config,
+    #         )
+    #         if config.tie_word_embeddings:
+    #             self.lm_head.weight = self.lm_head.wte.weight
+
+    #         logit_scale = getattr(config, "logit_scale", 1.0)
+    #         self.logits_processor = LogitsProcessor(self.unpadded_vocab_size,
+    #                                                 config.vocab_size,
+    #                                                 logit_scale)
+    #     else:
+    #         self.lm_head = PPMissingLayer()
+
+    #     self.sampler = get_sampler()
+
+    #     self.make_empty_intermediate_tensors = (
+    #         self.model.make_empty_intermediate_tensors)
+    #     print(f"Using MorehGptOssForCausalLM with VLLM config = {self.vllm_config}")
+
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.model.get_input_embeddings(input_ids)
 
@@ -750,8 +825,12 @@ class MorehGptOssForCausalLM(nn.Module, SupportsPP):
         self, hidden_states: torch.Tensor,
         sampling_metadata: SamplingMetadata,
     ) -> torch.Tensor:
+        print_debug_dash(FILE_LOG, dash=75)
+        print_debug_text(FILE_LOG, f"{sampling_metadata=}")
+        print_debug(hidden_states, file_path=FILE_LOG, name=f"[COMPUTE_LOGITS] hidden states", dash=100)
         logits = self.logits_processor(self.lm_head, hidden_states, sampling_metadata)
         print_debug(logits, file_path=FILE_LOG, name=f"logits", dash=200)
+        print_debug_dash(FILE_LOG, dash=75)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str,
