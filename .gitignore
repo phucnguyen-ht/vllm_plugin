@@ -5,7 +5,6 @@ vllm_plugin.egg-info
 3rdparty/triton
 3rdparty/triton_kernels
 3rdparty/cmake-3.29.6
-3rdparty/vllm/ 
 3rdparty/lm-evaluation-harness/ 
 
 

@@ -7,11 +7,12 @@ cd docker
 docker compose -f image.yml up
 docker exec -ti gptoss-plugin-vllm0.8.2 bash
 ```
-It's important to note that it's required to include the following line in `mount` section:
+It is important to note that you must include the following line in the `mount` section:
 ```
 ../3rdparty/vllm:/usr/local/lib/python3.10/dist-packages/vllm
 ```
-This is because we will use our customized vLLM on default version `0.8.2+e3e4b26`. The customized section details will be told in the `Appendix`
+This is required because we are using a customized vLLM instead of the default version `0.8.2+e3e4b26`.
+Details of the custom modifications are described in the `Appendix` section.
 ### Setup packages
 ```
 cd scripts      # note that you need to change the $WORKING_DIR in this file
@@ -32,15 +33,15 @@ bash benchmark2.sh
 
 ## Appendix:
 ### vLLM on modification:
-All the patched diff listed in `assets/vllm_patch.diff`:
-- attention backend: gpt-oss uses attention sink for its attention layer, so I `tham khảo` from latest vLLM to add sink in triton attention backend interface and triton kernels:
+All applied patches are listed in `assets/vllm_patch.diff`:
+- attention backend: GPT-OSS uses attention sink in its attention layer. Therefore, I referenced the latest vLLM implementation and added sink support to the Triton attention backend interface and Triton kernels.
     - backend interface:
         - `v1/attention/backends/triton_attn.py`
     - triton kernels:
         - `attention/ops/chunked_prefill_paged_decode.py`
         - `attention/ops/prefix_prefill.py`
-- rmsnorm: using hygon-rmsnorm return wrong result compared to MI250-rmsnorm, so I use native torch call in `model_executor/layers/layernorm.py`
-- `vllm/v1/worker/gpu_model_runner.py:get_kv_cache_spec`: There is a change in this method which using in Attention module. The reason for this modification is that I use custom `MorehFusedMoE` class, this one must inherit from `FusedMoe` class. And this `FusedMoE` needs to be patched very much between version `0.8.2` and `0.10.1` (placed in `vllm_patch`). And because `vllm_patch/FusedMoE` is outside of vLLM project, so if I keep the original code, the error occurs here because `FusedMoE` in this `get_kv_cache_spec` refering to original `FusedMoE` in `v0.8.2`, not patched one.
+- rmsnorm: The Hygon RMSNorm implementation produces incorrect results compared to MI250 RMSNorm. As a result, I replaced it with a native PyTorch implementation in `model_executor/layers/layernorm.py`
+- `vllm/v1/worker/gpu_model_runner.py:get_kv_cache_spec`: There is a required change in `vllm/v1/worker/gpu_model_runner.py:get_kv_cache_spec`, which is used by the Attention module.The reason for this modification is that I use a custom `MorehFusedMoE` class. This class must inherit from `FusedMoE`, and `FusedMoE` itself is heavily patched between vLLM versions `0.8.2` and `0.10.1` (the patched version is located in `vllm_patch`). Because `vllm_patch/FusedMoE` exists outside of the `vLLM` project, keeping the original code would cause an error: `get_kv_cache_spec` would still reference the original `FusedMoE` class from vLLM 0.8.2, rather than the patched one.
     ```
         if isinstance(attn_module, FusedMoE):
             continue
@@ -50,7 +51,7 @@ All the patched diff listed in `assets/vllm_patch.diff`:
         if "FusedMoE" in attn_module.__class__.__name__:
             continue
     ```
-- We must set `"torch_dtype": "bfloat16"` in `/openai/gpt-oss-20b/config.json` due to the following code in `vllm/config.py:_get_and_verify_dtype`. This method returns the type of model: 
+- We must set `"torch_dtype": "bfloat16"` in `/openai/gpt-oss-20b/config.json` due to the behavior of the following method in `vllm/config.py:_get_and_verify_dtype.`
     ```
     def _get_and_verify_dtype(
         config: PretrainedConfig,
@@ -74,20 +75,20 @@ All the patched diff listed in `assets/vllm_patch.diff`:
                 else:
                     torch_dtype = config_dtype
     ```
-    If we dont set `torch_dtype` as `bfloat16`, the type of model will be torch.float16. (The later vLLM `v0.10.1` change this method to automatically cast to `bfloat16` instead of `float16`)
+    If `torch_dtype` is not explicitly set to `bfloat16`, the model will default to `torch.float16.` Later versions of vLLM (v0.10.1) changed this behavior to automatically cast to `bfloat16` instead of `float16`.
 
-- Logit Processor: The forward of this class wrongs with GPT-OSS. Here is the flow:
+- Logit Processor: The forward path produces incorrect outputs when used with GPT-OSS.
     ```
     model_executor.layers.logit_processor.py:LogitsProcessor.forward(...)
     model_executor.layers.logit_processor.py:LogitsProcessor._get_logits(...) -> lm_head.quant_method.apply(...)
     model_executor.layers.vocab_parallel_embedding.py:UnquantizedEmbeddingMethod.apply(...) -> F.linear(x, layer.weight, bias)
     ```
-    After debugging by some print statemments, I found out that the output of this class is wrong when all returns to zero.
+    After debugging with print statements, I found that the output tensor becomes entirely zero:
     ```
     name='logits'                  | dtype=torch.bfloat16  | shape=(1, 201088)          | 
     [[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]]
     ```
-    So, I have replaced it by a simple triton kernel in `vllm/external/matmul.py:triton_matmul`
+    To fix this issue, I replaced the implementation with a simple Triton kernel located in `vllm/external/matmul.py:triton_matmul`
 
 
 ### Execution flow to modify the logic of custom mxfp4 quantization:

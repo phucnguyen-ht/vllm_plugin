@@ -2,3 +2,7 @@
 	path = 3rdparty/fused_moe
 	url = git@github.com:moreh-dev/fused_moe.git
 	branch = phucnguyen/optimize_mxfp4_gptoss_hygon
+[submodule "3rdparty/vllm"]
+	path = 3rdparty/vllm
+	url = git@github.com:phucnguyen-ht/custom-vllm.git
+	branch = release
