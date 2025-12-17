@@ -3,6 +3,7 @@
 ### Clone repository and serve the container
 ```
 git clone --recursive https://github.com/phucnguyen-ht/vllm_plugin.git
+cd 3rdparty/vllm && git lfs pull
 cd docker
 docker compose -f image.yml up
 docker exec -ti gptoss-plugin-vllm0.8.2 bash
