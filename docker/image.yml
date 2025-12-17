@@ -1,53 +1,18 @@
 version: '3.8'
 
 services:
-  test-gptoss-plugin-vllmm-0.8.2:
+  gptoss-plugin-vllm0.8.2:
     image: 192.168.162.66:8888/opt:3.2-rc1-ubuntu22.04-py310-torch2.6 
-    container_name: test-gptoss-plugin-vllmm-0.8.2
+    container_name: gptoss-plugin-vllm0.8.2
     working_dir: /home/tester/phucnguyen
     volumes:
       - /home/tester/phucnguyen:/home/tester/phucnguyen
       - /home/tester/data:/home/tester/data
-      - ../3rdparty/vllm:/usr/local/lib/python3.10/dist-packages/vllm
 
-      # - ../3rdparty/triton:/usr/local/lib/python3.10/dist-packages/triton
-      # - ../3rdparty/triton_kernels:/usr/local/lib/python3.10/dist-packages/triton_kernels
+      - ../3rdparty/vllm:/usr/local/lib/python3.10/dist-packages/vllm
 
     # ipc: host
     network_mode: host
     privileged: true
-    # cap_add:
-    #   - CAP_SYS_ADMIN
-    #   - SYS_PTRACE
-    # devices:
-    #   - /dev/kfd
-    #   - /dev/dri
-    #   - /dev/mem
-    # group_add:
-    #   - render
-    # security_opt:
-    #   - seccomp=unconfined
-    # stdin_open: true     # Equivalent to -it
-    # tty: true            # Equivalent to -it
-    #entrypoint:
-    #  - /bin/bash
-    #  - /workspace/setup/setup_zsh.sh
     command: /bin/bash -c "while true; do sleep 3600; done"
     restart: "no"        # Matches --rm behavior
-
-  # test-gptoss-plugin-vllm-0.10.1:
-  #   image: 192.168.162.66:8888/opt:3.2-rc1-ubuntu22.04-py310-torch2.6 
-  #   container_name: test-gptoss-plugin-vllm-0.10.1
-  #   working_dir: /home/tester/phucnguyen
-  #   volumes:
-  #     - /home/tester/phucnguyen:/home/tester/phucnguyen
-  #     - /home/tester/data:/home/tester/data
-
-  #     - ../3rdparty/triton:/usr/local/lib/python3.10/dist-packages/triton
-  #     - ../3rdparty/triton_kernels:/usr/local/lib/python3.10/dist-packages/triton_kernels
-
-  #   # ipc: host
-  #   network_mode: host
-  #   privileged: true
-  #   command: /bin/bash -c "while true; do sleep 3600; done"
-  #   restart: "no"        # Matches --rm behavior

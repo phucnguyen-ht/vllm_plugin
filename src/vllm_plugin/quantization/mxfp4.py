@@ -177,7 +177,7 @@ class MorehMxfp4MoEMethod(Mxfp4MoEMethod):
         scale_dtype = torch.uint8
         mxfp4_block = 32
         
-        print(f"{hidden_size = }, {num_experts = }, {intermediate_size_per_partition = }, {extra_weight_attrs = }")
+        # print(f"{hidden_size = }, {num_experts = }, {intermediate_size_per_partition = }, {extra_weight_attrs = }")
         # Not roundup to pad
         self.intermediate_size = intermediate_size_per_partition_after_pad
         self.hidden_size = hidden_size

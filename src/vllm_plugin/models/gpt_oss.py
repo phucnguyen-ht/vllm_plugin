@@ -55,7 +55,7 @@ class OAIAttention(nn.Module):
         self.num_key_value_heads = config.num_key_value_heads
         self.hidden_size = config.hidden_size
 
-        print("-" * 200); print(f"{config.rope_scaling = }"); print(f"{config = }"); print("-" * 200)
+        # print("-" * 200); print(f"{config.rope_scaling = }"); print(f"{config = }"); print("-" * 200)
         self.rotary_emb = get_rope(
             self.head_dim,
             rotary_dim=self.head_dim,
@@ -154,7 +154,7 @@ class MLPBlock(torch.nn.Module):
                                       dtype=torch.bfloat16)
         assert config.intermediate_size % self.world_size == 0
         if ("Moreh" in quant_config.__class__.__name__):
-            print(f"[INFO] Using MorehFusedMoE: {quant_config.__class__.__name__}")
+            # print(f"[INFO] Using MorehFusedMoE: {quant_config.__class__.__name__}")
             self.experts = MorehFusedMoE(num_experts=config.num_local_experts,
                                     top_k=config.num_experts_per_tok,
                                     hidden_size=config.hidden_size,
@@ -167,7 +167,7 @@ class MLPBlock(torch.nn.Module):
                                     has_bias=True,
                                     activation="swigluoai")
         else:
-            print(f"[INFO] Using CustomFusedMoE: {quant_config.__class__.__name__}")
+            # print(f"[INFO] Using CustomFusedMoE: {quant_config.__class__.__name__}")
             self.experts = CustomFusedMoE(num_experts=config.num_local_experts,
                                     top_k=config.num_experts_per_tok,
                                     hidden_size=config.hidden_size,
@@ -203,7 +203,7 @@ class TransformerBlock(torch.nn.Module):
                             self.layer_idx,
                             quant_config=quant_config,
                             prefix=f"{prefix}.mlp")
-        self.input_layernorm = RMSNorm(config.hidden_size, eps=1e-5,name="input_layernorm")
+        self.input_layernorm = RMSNorm(config.hidden_size, eps=1e-5)
         self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=1e-5)
 
     def forward(
@@ -227,22 +227,22 @@ class TransformerBlock(torch.nn.Module):
             hidden_states, residual = self.input_layernorm(
                 hidden_states, residual)
             
-        print_debug(hidden_states, file_path=FILE_LOG, name=f"[after   INPUT_LAYER_NORM] hidden_states")
-        if use_residual:
-            print_debug(residual, file_path=FILE_LOG, name=f"[after   INPUT_LAYER_NORM] residual", dash=25)
-        else:
-            print_debug_text(FILE_LOG, f"[after   INPUT_LAYER_NORM] residual is None")
+        # print_debug(hidden_states, file_path=FILE_LOG, name=f"[after   INPUT_LAYER_NORM] hidden_states")
+        # if use_residual:
+        #     print_debug(residual, file_path=FILE_LOG, name=f"[after   INPUT_LAYER_NORM] residual", dash=25)
+        # else:
+        #     print_debug_text(FILE_LOG, f"[after   INPUT_LAYER_NORM] residual is None")
 
         hidden_states = self.attn(hidden_states, positions)
-        print_debug(hidden_states, file_path=FILE_LOG, name=f"[after   ATTENTION] hidden_states", dash=25)
+        # print_debug(hidden_states, file_path=FILE_LOG, name=f"[after   ATTENTION] hidden_states", dash=25)
         # Fully Connected
         hidden_states, residual = self.post_attention_layernorm(
             hidden_states, residual)
-        print_debug(hidden_states, file_path=FILE_LOG, name=f"[after  _POST_ATTENTION NORM] hidden_states")
-        print_debug(residual, file_path=FILE_LOG, name=f"[after  _POST_ATTENTION NORM] residual", dash=25)
+        # print_debug(hidden_states, file_path=FILE_LOG, name=f"[after  _POST_ATTENTION NORM] hidden_states")
+        # print_debug(residual, file_path=FILE_LOG, name=f"[after  _POST_ATTENTION NORM] residual", dash=25)
 
         output = self.mlp(hidden_states)
-        print_debug(output, file_path=FILE_LOG, name=f"[after  MLP] output", dash=25)
+        # print_debug(output, file_path=FILE_LOG, name=f"[after  MLP] output", dash=25)
         return output, residual
 
 
@@ -280,10 +280,10 @@ class GptOssModel(nn.Module):
             make_empty_intermediate_tensors_factory(
                 ["hidden_states", "residual"], self.config.hidden_size))
         
-        print(f"Using GptOssModel with model_config = {self.config}")
-        print(f"Using GptOssModel with cache_config = {self.cache_config}")
-        print(f"Using GptOssModel with parallel_config = {self.parallel_config}")
-        print(f"Using GptOssModel with quant_config = {self.quant_config}")
+        # print(f"Using GptOssModel with model_config = {self.config}")
+        # print(f"Using GptOssModel with cache_config = {self.cache_config}")
+        # print(f"Using GptOssModel with parallel_config = {self.parallel_config}")
+        # print(f"Using GptOssModel with quant_config = {self.quant_config}")
 
     def get_input_embeddings(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embedding(input_ids)
@@ -300,8 +300,8 @@ class GptOssModel(nn.Module):
                 x = inputs_embeds
             else:
                 x = self.get_input_embeddings(input_ids)
-                print_debug(input_ids, file_path=FILE_LOG, name="input_ids", print_shape=True)
-                print_debug(x, file_path=FILE_LOG, name="input_embeds")
+                # print_debug(input_ids, file_path=FILE_LOG, name="input_ids", print_shape=True)
+                # print_debug(x, file_path=FILE_LOG, name="input_embeds")
                 
             residual = None
         else:
@@ -310,13 +310,13 @@ class GptOssModel(nn.Module):
             residual = intermediate_tensors["residual"]
 
         for i in range(self.start_layer, self.end_layer):
-            print_debug_text(FILE_LOG, f">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> START Layer {i}")
+            # print_debug_text(FILE_LOG, f">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> START Layer {i}")
             layer = self.layers[i]
             x, residual = layer(x, positions, residual)
-            print_debug(positions, file_path=FILE_LOG, name=f"positions layer {i}", layer=-1)
-            print_debug(x, file_path=FILE_LOG, name=f"x layer {i}", layer=i)
-            print_debug(residual, file_path=FILE_LOG, name=f"residual layer {i}", layer=-1, dash=50)
-            print_debug_text(FILE_LOG, f">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> END Layer {i}")
+            # print_debug(positions, file_path=FILE_LOG, name=f"positions layer {i}", layer=-1)
+            # print_debug(x, file_path=FILE_LOG, name=f"x layer {i}", layer=i)
+            # print_debug(residual, file_path=FILE_LOG, name=f"residual layer {i}", layer=-1, dash=50)
+            # print_debug_text(FILE_LOG, f">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> END Layer {i}")
 
         if not get_pp_group().is_last_rank:
             return IntermediateTensors({
@@ -324,7 +324,7 @@ class GptOssModel(nn.Module):
                 "residual": residual
             })
         x, _ = self.norm(x, residual)
-        print_debug(x, file_path=FILE_LOG, name=f"x after forward", dash=100)
+        # print_debug(x, file_path=FILE_LOG, name=f"x after forward", dash=100)
         return x
 
     def _load_weights_mxfp4(
@@ -825,12 +825,12 @@ class MorehGptOssForCausalLM(nn.Module, SupportsPP):
         self, hidden_states: torch.Tensor,
         sampling_metadata: SamplingMetadata,
     ) -> torch.Tensor:
-        print_debug_dash(FILE_LOG, dash=75)
-        print_debug_text(FILE_LOG, f"{sampling_metadata=}")
-        print_debug(hidden_states, file_path=FILE_LOG, name=f"[COMPUTE_LOGITS] hidden states", dash=100)
+        # print_debug_dash(FILE_LOG, dash=75)
+        # print_debug_text(FILE_LOG, f"{sampling_metadata=}")
+        # print_debug(hidden_states, file_path=FILE_LOG, name=f"[COMPUTE_LOGITS] hidden states", dash=100)
         logits = self.logits_processor(self.lm_head, hidden_states, sampling_metadata)
-        print_debug(logits, file_path=FILE_LOG, name=f"logits", dash=200)
-        print_debug_dash(FILE_LOG, dash=75)
+        # print_debug(logits, file_path=FILE_LOG, name=f"logits", dash=200)
+        # print_debug_dash(FILE_LOG, dash=75)
         return logits
 
     def load_weights(self, weights: Iterable[tuple[str,

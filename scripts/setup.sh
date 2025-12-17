@@ -29,11 +29,11 @@ VLLM_MOREH_DIR=$WORKING_DIR
 # fi
 
 # # install fused_moe
-# cd "$VLLM_MOREH_DIR/3rdparty/fused_moe" && python3 setup_hygon.py develop
+cd "$VLLM_MOREH_DIR/3rdparty/fused_moe" && python3 setup_hygon.py develop
 
-# # replace aiter import error => unable to use aiter because of HIP Device Function
-# AITER_PACKAGE_DIR="/usr/local/lib/python3.10/dist-packages/aiter"
-# cp "$VLLM_MOREH_DIR/3rdparty/aiter/utility/dtypes.py" "$AITER_PACKAGE_DIR/utility/dtypes.py"
+# replace aiter import error => unable to use aiter because of HIP Device Function
+AITER_PACKAGE_DIR="/usr/local/lib/python3.10/dist-packages/aiter"
+cp "$VLLM_MOREH_DIR/3rdparty/aiter/utility/dtypes.py" "$AITER_PACKAGE_DIR/utility/dtypes.py"
 
 # install vllm-plugin
 rm -rf "$VLLM_MOREH_DIR/build" "$VLLM_MOREH_DIR/vllm_plugin.egg-info" "$VLLM_MOREH_DIR/src/vllm_plugin.egg-info"

@@ -149,7 +149,7 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
         #     "Please check your environment and try again."
         # )
         self._cache_permute_indices: dict[torch.Size, torch.Tensor] = {}
-        print(f"Using Mxfp4MoEMethod with config: {moe = }")
+        # print(f"Using Mxfp4MoEMethod with config: {moe = }")
 
     def create_weights(
         self,
