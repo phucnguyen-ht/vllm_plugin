@@ -1,6 +1,6 @@
 __pycache__
 
-.egg-info
+vllm_plugin.egg-info
 
 3rdparty/triton
 3rdparty/triton_kernels
@@ -14,3 +14,4 @@ tmp/_local_remotes/
 _local_remotes/
 
 datasets
+3rdparty/vllm.BACKUP.20251217_090110
